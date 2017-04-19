@@ -114,7 +114,7 @@ def create_offset(addr):
 def strings_init():
     strings_added = 0
     retry = []
-    text_seg = ida_segment.get_segm_by_name('.text')
+    text_seg = idaapi.get_segm_by_name('.text')
 
     # This may be inherently flawed as it will only search for defined functions
     # and as of IDA Pro 6.95 it fails to autoanalyze many GO functions, currently
@@ -132,8 +132,8 @@ def strings_init():
 
         while addr <= end_addr:
             if is_string_load(addr):
-                if 'rodata' not in ida_segment.get_segm_name(addr) and 'text' not in ida_segment.get_segm_name(addr):
-                    debug('Should a string be in the %s section?' % ida_segment.get_segm_name(addr))
+                if 'rodata' not in idaapi.get_segm_name(addr) and 'text' not in idaapi.get_segm_name(addr):
+                    debug('Should a string be in the %s section?' % idaapi.get_segm_name(addr))
                 string_addr = GetOperandValue(addr, 1)
                 addr_3 = FindCode(FindCode(addr, SEARCH_DOWN), SEARCH_DOWN)
                 string_len = GetOperandValue(addr_3, 1)
@@ -179,10 +179,10 @@ def is_simple_wrapper(addr):
 def create_runtime_ms():
     debug('Attempting to find runtime_morestack function for hooking on...')
 
-    text_seg = ida_segment.get_segm_by_name('.text')
+    text_seg = idaapi.get_segm_by_name('.text')
     # This code string appears to work for ELF32 and ELF64 AFAIK
-    runtime_ms_end = ida_search.find_text(text_seg.startEA, 0, 0, "word ptr ds:1003h, 0", SEARCH_DOWN)
-    runtime_ms = ida_funcs.get_func(runtime_ms_end)
+    runtime_ms_end = idaapi.find_text(text_seg.startEA, 0, 0, "word ptr ds:1003h, 0", SEARCH_DOWN)
+    runtime_ms = idaapi.get_func(runtime_ms_end)
     if idc.MakeNameEx(runtime_ms.startEA, "runtime_morestack", SN_PUBLIC):
         debug('Successfully found runtime_morestack')
     else:
@@ -197,11 +197,11 @@ def traverse_xrefs(func):
         return func_created
 
     # First
-    func_xref = ida_xref.get_first_cref_to(func.startEA)
+    func_xref = idaapi.get_first_cref_to(func.startEA)
     # Attempt to go through crefs
     while func_xref != 0xffffffffffffffff:
         # See if there is a function already here
-        if ida_funcs.get_func(func_xref) is None:
+        if idaapi.get_func(func_xref) is None:
             # Ensure instruction bit looks like a jump
             func_end = FindCode(func_xref, SEARCH_DOWN)
             if GetMnem(func_end) == "jmp":
@@ -215,26 +215,26 @@ def traverse_xrefs(func):
                         # Then create small "wrapper" functions and backtrack through the xrefs of this
                         error('Error trying to create a function @ 0x%x - 0x%x' %(func_start, func_end))
         else:
-            xref_func = ida_funcs.get_func(func_xref)
+            xref_func = idaapi.get_func(func_xref)
             # Simple wrapper is often runtime_morestack_noctxt, sometimes it isn't though...
             if is_simple_wrapper(xref_func.startEA):
                 debug('Stepping into a simple wrapper')
                 func_created += traverse_xrefs(xref_func)
-            if ida_funcs.get_func_name(xref_func.startEA) is not None and 'sub_' not in ida_funcs.get_func_name(xref_func.startEA):
-                debug('Function @0x%x already has a name of %s; skipping...' % (func_xref, ida_funcs.get_func_name(xref_func.startEA)))
+            if idaapi.get_func_name(xref_func.startEA) is not None and 'sub_' not in idaapi.get_func_name(xref_func.startEA):
+                debug('Function @0x%x already has a name of %s; skipping...' % (func_xref, idaapi.get_func_name(xref_func.startEA)))
             else:
-                debug('Function @ 0x%x already has a name %s' % (xref_func.startEA, ida_funcs.get_func_name(xref_func.startEA)))
+                debug('Function @ 0x%x already has a name %s' % (xref_func.startEA, idaapi.get_func_name(xref_func.startEA)))
 
-        func_xref = ida_xref.get_next_cref_to(func.startEA, func_xref) 
+        func_xref = idaapi.get_next_cref_to(func.startEA, func_xref)
 
     return func_created
 
 def find_func_by_name(name):
-    text_seg = ida_segment.get_segm_by_name('.text')
+    text_seg = idaapi.get_segm_by_name('.text')
 
     for addr in Functions(text_seg.startEA, text_seg.endEA):
-        if name == ida_funcs.get_func_name(addr):
-            return ida_funcs.get_func(addr)
+        if name == idaapi.get_func_name(addr):
+            return idaapi.get_func(addr)
 
     return None
         
@@ -281,7 +281,7 @@ def clean_function_name(str):
 def renamer_init():
     renamed = 0
 
-    gopclntab = ida_segment.get_segm_by_name('.gopclntab')
+    gopclntab = idaapi.get_segm_by_name('.gopclntab')
     if gopclntab is not None:
         # Skip unimportant header and goto section size
         addr = gopclntab.startEA + 8
@@ -301,7 +301,7 @@ def renamer_init():
             appended = clean_func_name = clean_function_name(func_name)
             debug('Going to remap function at 0x%x with %s - cleaned up as %s' % (func_offset, func_name, clean_func_name))
 
-            if ida_funcs.get_func_name(func_offset) is not None:
+            if idaapi.get_func_name(func_offset) is not None:
                 if MakeName(func_offset, clean_func_name):
                     renamed += 1
                 else:
