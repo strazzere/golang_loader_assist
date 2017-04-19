@@ -114,7 +114,10 @@ def create_offset(addr):
 def strings_init():
     strings_added = 0
     retry = []
-    text_seg = ida_segment.get_segm_by_name('.text')
+    text_seg = get_text_seg()
+    if text_seg is None:
+        debug('Failed to get text segment')
+        return strings_added
 
     # This may be inherently flawed as it will only search for defined functions
     # and as of IDA Pro 6.95 it fails to autoanalyze many GO functions, currently
@@ -164,6 +167,23 @@ def strings_init():
 #
 
 
+def get_text_seg():
+    #   .text found in PE & ELF binaries, __text found in macho binaries
+    return _get_seg(['.text', '__text'])
+
+def get_gopclntab_seg():
+    #   .text found in PE & ELF binaries, __text found in macho binaries
+    return _get_seg(['.gopclntab', '__gopclntab'])
+
+def _get_seg(possible_seg_names):
+    seg = None
+    for seg_name in possible_seg_names:
+        seg = ida_segment.get_segm_by_name(seg_name)
+        if seg:
+            return seg
+
+    return seg
+
 # Indicators of runtime_morestack
 # mov     large dword ptr ds:1003h, 0 # most I've seen
 # mov     qword ptr ds:1003h, 0 # some
@@ -179,10 +199,27 @@ def is_simple_wrapper(addr):
 def create_runtime_ms():
     debug('Attempting to find runtime_morestack function for hooking on...')
 
-    text_seg = ida_segment.get_segm_by_name('.text')
-    # This code string appears to work for ELF32 and ELF64 AFAIK
-    runtime_ms_end = ida_search.find_text(text_seg.startEA, 0, 0, "word ptr ds:1003h, 0", SEARCH_DOWN)
+    text_seg = get_text_seg()
+    if text_seg is None:
+        debug('Failed to get text segment')
+        return None
+
+    #   Opcodes for "mov     large dword ptr ds:1003h, 0", binary search is faster than text search
+    opcodes = 'c7 05 03 10 00 00 00 00 00 00'
+    if idaapi.get_inf_structure().is_64bit():
+        #   Opcodes for "mov     qword ptr ds:dword_1000+3, 0"
+        opcodes = '48 c7 04 25 03 10 00 00 00 00 00 00'
+
+    runtime_ms_end = ida_search.find_binary(text_seg.startEA, text_seg.endEA, opcodes, 0, SEARCH_DOWN)
+    if runtime_ms_end == BADADDR:
+        debug('Failed to find opcodes associated with runtime_morestack: %s' % opcodes)
+        return None
+
     runtime_ms = ida_funcs.get_func(runtime_ms_end)
+    if runtime_ms is None:
+        debug('Failed to get runtime_morestack function from address @ 0x%x' % runtime_ms_end)
+        return None
+
     if idc.MakeNameEx(runtime_ms.startEA, "runtime_morestack", SN_PUBLIC):
         debug('Successfully found runtime_morestack')
     else:
@@ -199,7 +236,7 @@ def traverse_xrefs(func):
     # First
     func_xref = ida_xref.get_first_cref_to(func.startEA)
     # Attempt to go through crefs
-    while func_xref != 0xffffffffffffffff:
+    while func_xref != BADADDR:
         # See if there is a function already here
         if ida_funcs.get_func(func_xref) is None:
             # Ensure instruction bit looks like a jump
@@ -230,14 +267,16 @@ def traverse_xrefs(func):
     return func_created
 
 def find_func_by_name(name):
-    text_seg = ida_segment.get_segm_by_name('.text')
+    text_seg = get_text_seg()
+    if text_seg is None:
+        return None
 
     for addr in Functions(text_seg.startEA, text_seg.endEA):
         if name == ida_funcs.get_func_name(addr):
             return ida_funcs.get_func(addr)
 
     return None
-        
+
 def runtime_init():
     func_created = 0
 
@@ -247,7 +286,7 @@ def runtime_init():
     else:
         runtime_ms = create_runtime_ms()
         func_created = traverse_xrefs(runtime_ms)
-    
+
 
     return func_created
 
@@ -281,7 +320,7 @@ def clean_function_name(str):
 def renamer_init():
     renamed = 0
 
-    gopclntab = ida_segment.get_segm_by_name('.gopclntab')
+    gopclntab = get_gopclntab_seg()
     if gopclntab is not None:
         # Skip unimportant header and goto section size
         addr = gopclntab.startEA + 8
@@ -318,7 +357,7 @@ def main():
     # This should prevent the script from locking up due to the auto initalizer
     idaapi.autoWait()
 
-    # Should be run after the function initializer, 
+    # Should be run after the function initializer,
     renamed = renamer_init()
     info('Found and successfully renamed %d functions!' % renamed)
 
