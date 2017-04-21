@@ -67,22 +67,24 @@ def debug(formatted_string):
 
 
 # Currently it's normally ebx, but could in theory be anything - seen ebp
-VALID_REGS = ['ebx', 'ebp', 'rax', 'rcx', 'r10', 'rdx']
+VALID_REGS = ['eax', 'ebx', 'ebp', 'rax', 'rcx', 'r10', 'rdx']
 
 # Currently it's normally esp, but could in theory be anything - seen eax
 VALID_DEST = ['esp', 'eax', 'ecx', 'edx', 'rsp']
 
 # TODO : Extract patterns
-# TODO : Make work on something other than ELF files
 def is_string_load(addr):
     patterns = []
-    # Check for first part
-    if GetMnem(addr) != 'mov' and GetMnem(addr) != 'lea':
+    # Check for first parts instruction and what it is loading -- also ignore function pointers we may have renamed
+    if (GetMnem(addr) != 'mov' and GetMnem(addr) != 'lea') and (GetOpType(addr, 1) != 2 or GetOpType(addr, 1) != 5) or GetOpnd(addr, 1)[-4:] == '_ptr':
         return False
 
-    # Could be unk_ or asc_, ignored ones could be loc_ or inside []
+    # Validate that the string offset actually exists inside the binary
+    if idaapi.get_segm_name(GetOperandValue(addr, 1)) is None:
+        return False
+
+    # Could be unk_, asc_, 'offset ', XXXXh, ignored ones are loc_ or inside []
     if GetOpnd(addr, 0) in VALID_REGS and not ('[' in GetOpnd(addr, 1) or 'loc_' in GetOpnd(addr, 1)) and (('offset ' in GetOpnd(addr, 1) or 'h' in GetOpnd(addr, 1)) or ('unk' == GetOpnd(addr, 1)[:3])):
-    # or 'a' == GetOpnd(addr, 1)[:1])):
         from_reg = GetOpnd(addr, 0)
         # Check for second part
         addr_2 = FindCode(addr, SEARCH_DOWN)
@@ -93,7 +95,8 @@ def is_string_load(addr):
         if GetMnem(addr_2) == 'mov' and dest_reg in VALID_DEST and ('[%s' % dest_reg) in GetOpnd(addr_2, 0) and GetOpnd(addr_2, 1) == from_reg:
             # Check for last part, could be improved
             addr_3 = FindCode(addr_2, SEARCH_DOWN)
-            if GetMnem(addr_3) == 'mov' and (('[%s+' % dest_reg) in GetOpnd(addr_3, 0) or GetOpnd(addr_3, 0) in VALID_DEST) and 'offset ' not in GetOpnd(addr_3, 1) and 'dword ptr ds' not in GetOpnd(addr_3, 1):
+            # GetOpType 1 is a register, potentially we can just check that GetOpType returned 5?
+            if GetMnem(addr_3) == 'mov' and (('[%s+' % dest_reg) in GetOpnd(addr_3, 0) or GetOpnd(addr_3, 0) in VALID_DEST) and 'offset ' not in GetOpnd(addr_3, 1) and 'dword ptr ds' not in GetOpnd(addr_3, 1) and GetOpType(addr_3, 1) != 1 and GetOpType(addr_3, 1) != 2 and GetOpType(addr_3, 1) != 4:
                 try:
                     dumb_int_test = GetOperandValue(addr_3, 1)
                     if dumb_int_test > 0 and dumb_int_test < sys.maxsize:
@@ -104,6 +107,10 @@ def is_string_load(addr):
     return False
 
 def create_string(addr, string_len):
+    if idaapi.get_segm_name(addr) is None:
+        debug('Cannot load a string which has no segment - not creating string @ 0x%02x' % addr)
+        return False
+
     debug('Found string load @ 0x%x with length of %d' % (addr, string_len))
     # This may be overly aggressive if we found the wrong area...
     if GetStringType(addr) is not None and GetString(addr) is not None and len(GetString(addr)) != string_len:
@@ -418,7 +425,7 @@ def main():
     pointers_renamed = pointer_renamer()
     info('Found and successfully renamed %d function pointers!' % pointers_renamed)
 
-    #info('Attempting to find GO strings in use...')
+    # Attempt to find all string loading idioms
     strings_added = strings_init()
     info('Found and successfully created %d strings!' % strings_added)
 
