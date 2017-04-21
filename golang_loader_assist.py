@@ -61,6 +61,10 @@ def debug(formatted_string):
 # mov     [rsp+40h+var_38], rdx
 # mov     [rsp+40h+var_30], 13h
 
+# lea     eax, unk_82410F0
+# mov     [esp+94h+var_8C], eax
+# mov     [esp+94h+var_88], 2
+
 
 # Currently it's normally ebx, but could in theory be anything - seen ebp
 VALID_REGS = ['ebx', 'ebp', 'rax', 'rcx', 'r10', 'rdx']
@@ -186,7 +190,7 @@ def get_text_seg():
     return _get_seg(['.text', '__text'])
 
 def get_gopclntab_seg():
-    #   .text found in PE & ELF binaries, __text found in macho binaries
+    #   .gopclntab found in PE & ELF binaries, __gopclntab found in macho binaries
     return _get_seg(['.gopclntab', '__gopclntab'])
 
 def _get_seg(possible_seg_names):
