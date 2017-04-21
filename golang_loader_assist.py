@@ -3,7 +3,7 @@
 __author__ = "Tim 'diff' Strazzere"
 __copyright__ = "Copyright 2016, Red Naga"
 __license__ = "GPL"
-__version__ = "1.1"
+__version__ = "1.2"
 __email__ = ["strazz@gmail.com"]
 
 from idautils import *
@@ -362,6 +362,41 @@ def renamer_init():
 
     return renamed
 
+
+# Function pointers are often used instead of passing a direct address to the
+# function -- this function names them based off what they're currently named
+# to ease reading
+#
+# lea     rax, main_GetExternIP_ptr <-- pointer to actual function
+# mov     [rsp+1C0h+var_1B8], rax <-- loaded as arg for next function
+# call    runtime_newproc <-- function is used inside a new process
+
+def pointer_renamer():
+    renamed = 0
+
+    text_seg = get_text_seg()
+    if text_seg is None:
+        debug('Failed to get text segment')
+        return strings_added
+
+    for addr in Functions(text_seg.startEA, text_seg.endEA):
+        name = GetFunctionName(addr)
+
+        # Look at data xrefs to the function - find the pointer that is located in .rodata
+        data_ref = idaapi.get_first_dref_to(addr)
+        while data_ref != BADADDR:
+            if 'rodata' in idaapi.get_segm_name(data_ref):
+                # Only rename things that are currently listed as an offset; eg. off_9120B0
+                if 'off_' in GetTrueName(data_ref):
+                    if MakeName(data_ref, ('%s_ptr' % name)):
+                        renamed += 1
+                    else:
+                        error('error attempting to name pointer @ 0x%02x for %s' % (data_ref, name))
+
+            data_ref = idaapi.get_next_dref_to(addr, data_ref)
+
+    return renamed
+
 def main():
 
     # This should be run before the renamer, as it will find and help define more functions
@@ -374,6 +409,10 @@ def main():
     # Should be run after the function initializer,
     renamed = renamer_init()
     info('Found and successfully renamed %d functions!' % renamed)
+
+    # Attempt to rename all function pointers after we have all the functions and proper function names
+    pointers_renamed = pointer_renamer()
+    info('Found and successfully renamed %d function pointers!' % pointers_renamed)
 
     #info('Attempting to find GO strings in use...')
     strings_added = strings_init()
