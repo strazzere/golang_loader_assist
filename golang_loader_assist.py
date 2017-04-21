@@ -3,7 +3,7 @@
 __author__ = "Tim 'diff' Strazzere"
 __copyright__ = "Copyright 2016, Red Naga"
 __license__ = "GPL"
-__version__ = "1.0"
+__version__ = "1.1"
 __email__ = ["strazz@gmail.com"]
 
 from idautils import *
@@ -51,37 +51,51 @@ def debug(formatted_string):
 # mov     dword ptr [esp+0F0h+var_E8+4], ebx
 # mov     [esp+0F0h+var_E0], 19h
 
+# Found in newer versions of golang binaries
+
+# lea     rax, unk_8FC736
+# mov     [rsp+38h+var_18], rax
+# mov     [rsp+38h+var_10], 1Dh
+
+# lea     rdx, unk_8F6E82
+# mov     [rsp+40h+var_38], rdx
+# mov     [rsp+40h+var_30], 13h
+
+
 # Currently it's normally ebx, but could in theory be anything - seen ebp
-VALID_REGS = ['ebx', 'ebp']
+VALID_REGS = ['ebx', 'ebp', 'rax', 'rcx', 'r10', 'rdx']
 
 # Currently it's normally esp, but could in theory be anything - seen eax
-VALID_DEST = ['esp', 'eax', 'ecx', 'edx']
+VALID_DEST = ['esp', 'eax', 'ecx', 'edx', 'rsp']
 
 # TODO : Extract patterns
 # TODO : Make work on something other than ELF files
 def is_string_load(addr):
     patterns = []
     # Check for first part
-    if GetMnem(addr) == 'mov':
-        # Could be unk_ or asc_, ignored ones could be loc_ or inside []
-        if GetOpnd(addr, 0) in VALID_REGS and not ('[' in GetOpnd(addr, 1) or 'loc_' in GetOpnd(addr, 1)) and('offset ' in GetOpnd(addr, 1) or 'h' in GetOpnd(addr, 1)):
-            from_reg = GetOpnd(addr, 0)
-            # Check for second part
-            addr_2 = FindCode(addr, SEARCH_DOWN)
-            try:
-                dest_reg = GetOpnd(addr_2, 0)[GetOpnd(addr_2, 0).index('[') + 1:GetOpnd(addr_2, 0).index('[') + 4]
-            except ValueError:
-                return False
-            if GetMnem(addr_2) == 'mov' and dest_reg in VALID_DEST and ('[%s' % dest_reg) in GetOpnd(addr_2, 0) and GetOpnd(addr_2, 1) == from_reg:
-                # Check for last part, could be improved
-                addr_3 = FindCode(addr_2, SEARCH_DOWN)
-                if GetMnem(addr_3) == 'mov' and (('[%s+' % dest_reg) in GetOpnd(addr_3, 0) or GetOpnd(addr_3, 0) in VALID_DEST) and 'offset ' not in GetOpnd(addr_3, 1) and 'dword ptr ds' not in GetOpnd(addr_3, 1):
-                    try:
-                        dumb_int_test = GetOperandValue(addr_3, 1)
-                        if dumb_int_test > 0 and dumb_int_test < sys.maxsize:
-                            return True
-                    except ValueError:
-                        return False
+    if GetMnem(addr) != 'mov' and GetMnem(addr) != 'lea':
+        return False
+
+    # Could be unk_ or asc_, ignored ones could be loc_ or inside []
+    if GetOpnd(addr, 0) in VALID_REGS and not ('[' in GetOpnd(addr, 1) or 'loc_' in GetOpnd(addr, 1)) and (('offset ' in GetOpnd(addr, 1) or 'h' in GetOpnd(addr, 1)) or ('unk' == GetOpnd(addr, 1)[:3])):
+    # or 'a' == GetOpnd(addr, 1)[:1])):
+        from_reg = GetOpnd(addr, 0)
+        # Check for second part
+        addr_2 = FindCode(addr, SEARCH_DOWN)
+        try:
+            dest_reg = GetOpnd(addr_2, 0)[GetOpnd(addr_2, 0).index('[') + 1:GetOpnd(addr_2, 0).index('[') + 4]
+        except ValueError:
+            return False
+        if GetMnem(addr_2) == 'mov' and dest_reg in VALID_DEST and ('[%s' % dest_reg) in GetOpnd(addr_2, 0) and GetOpnd(addr_2, 1) == from_reg:
+            # Check for last part, could be improved
+            addr_3 = FindCode(addr_2, SEARCH_DOWN)
+            if GetMnem(addr_3) == 'mov' and (('[%s+' % dest_reg) in GetOpnd(addr_3, 0) or GetOpnd(addr_3, 0) in VALID_DEST) and 'offset ' not in GetOpnd(addr_3, 1) and 'dword ptr ds' not in GetOpnd(addr_3, 1):
+                try:
+                    dumb_int_test = GetOperandValue(addr_3, 1)
+                    if dumb_int_test > 0 and dumb_int_test < sys.maxsize:
+                        return True
+                except ValueError:
+                    return False
 
     return False
 
