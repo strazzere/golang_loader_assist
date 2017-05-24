@@ -388,7 +388,7 @@ def pointer_renamer():
     text_seg = get_text_seg()
     if text_seg is None:
         debug('Failed to get text segment')
-        return strings_added
+        return renamed
 
     for addr in Functions(text_seg.startEA, text_seg.endEA):
         name = GetFunctionName(addr)
