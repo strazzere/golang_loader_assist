@@ -198,17 +198,30 @@ def get_text_seg():
     return _get_seg(['.text', '__text'])
 
 def get_gopclntab_seg():
-    #   .gopclntab found in PE & ELF binaries, __gopclntab found in macho binaries
-    return _get_seg(['.gopclntab', '__gopclntab'])
+    # .gopclntab found in (older) PE & ELF binaries, __gopclntab found in macho binaries,
+    # runtime.pclntab in .rdata for newer PE binaries
+    seg =  _get_seg(['.gopclntab', '__gopclntab'])
+
+    if seg is None:
+        seg = _get_seg_from_rdata(['runtime.pclntab'])
+
+    return seg
 
 def _get_seg(possible_seg_names):
-    seg = None
     for seg_name in possible_seg_names:
         seg = ida_segment.get_segm_by_name(seg_name)
         if seg:
             return seg
 
-    return seg
+    return None
+
+def _get_seg_from_rdata(possible_seg_names):
+    for seg_name in possible_seg_names:
+        for ea, name in Names():
+            if name == seg_name:
+                return ea
+
+    return None
 
 # Indicators of runtime_morestack
 # mov     large dword ptr ds:1003h, 0 # most I've seen
@@ -348,8 +361,14 @@ def renamer_init():
 
     gopclntab = get_gopclntab_seg()
     if gopclntab is not None:
+        info('type : %s' % type(gopclntab))
+        startEA = 0
+        if isinstance(gopclntab, long):
+            startEA = gopclntab
+        else:
+            startEA = gopclntab.startEA
         # Skip unimportant header and goto section size
-        addr = gopclntab.startEA + 8
+        addr = startEA + 8
         size, addr_size = create_pointer(addr)
         addr += addr_size
 
@@ -360,7 +379,7 @@ def renamer_init():
             name_offset, addr_size = create_pointer(addr + addr_size)
             addr += addr_size * 2
 
-            func_name_addr = Dword(name_offset + gopclntab.startEA + addr_size) + gopclntab.startEA
+            func_name_addr = Dword(name_offset + startEA + addr_size) + startEA
             func_name = GetString(func_name_addr)
             MakeStr(func_name_addr, func_name_addr + len(func_name))
             appended = clean_func_name = clean_function_name(func_name)
