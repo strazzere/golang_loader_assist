@@ -1,14 +1,15 @@
 """golang_loader_assist.py: Help IDA Pro do some golang reversing."""
 
 __author__ = "Tim 'diff' Strazzere"
-__copyright__ = "Copyright 2016, Red Naga"
+__copyright__ = "Copyright 2016-2019, Red Naga"
 __license__ = "GPL"
-__version__ = "1.2"
+__version__ = "1.3"
 __email__ = ["strazz@gmail.com"]
 
 from idautils import *
 from idc import *
 import idaapi
+import ida_segment
 import sys
 import string
 
@@ -80,7 +81,7 @@ def is_string_load(addr):
         return False
 
     # Validate that the string offset actually exists inside the binary
-    if idaapi.get_segm_name(GetOperandValue(addr, 1)) is None:
+    if get_segm_name(GetOperandValue(addr, 1)) is None:
         return False
 
     # Could be unk_, asc_, 'offset ', XXXXh, ignored ones are loc_ or inside []
@@ -107,7 +108,7 @@ def is_string_load(addr):
     return False
 
 def create_string(addr, string_len):
-    if idaapi.get_segm_name(addr) is None:
+    if get_segm_name(addr) is None:
         debug('Cannot load a string which has no segment - not creating string @ 0x%02x' % addr)
         return False
 
@@ -160,8 +161,8 @@ def strings_init():
 
         while addr <= end_addr:
             if is_string_load(addr):
-                if 'rodata' not in idaapi.get_segm_name(addr) and 'text' not in idaapi.get_segm_name(addr):
-                    debug('Should a string be in the %s section?' % idaapi.get_segm_name(addr))
+                if 'rodata' not in get_segm_name(addr) and 'text' not in get_segm_name(addr):
+                    debug('Should a string be in the %s section?' % get_segm_name(addr))
                 string_addr = GetOperandValue(addr, 1)
                 addr_3 = FindCode(FindCode(addr, SEARCH_DOWN), SEARCH_DOWN)
                 string_len = GetOperandValue(addr_3, 1)
@@ -203,7 +204,7 @@ def get_gopclntab_seg():
 def _get_seg(possible_seg_names):
     seg = None
     for seg_name in possible_seg_names:
-        seg = idaapi.get_segm_by_name(seg_name)
+        seg = ida_segment.get_segm_by_name(seg_name)
         if seg:
             return seg
 
@@ -396,7 +397,7 @@ def pointer_renamer():
         # Look at data xrefs to the function - find the pointer that is located in .rodata
         data_ref = idaapi.get_first_dref_to(addr)
         while data_ref != BADADDR:
-            if 'rodata' in idaapi.get_segm_name(data_ref):
+            if 'rodata' in get_segm_name(data_ref):
                 # Only rename things that are currently listed as an offset; eg. off_9120B0
                 if 'off_' in GetTrueName(data_ref):
                     if MakeName(data_ref, ('%s_ptr' % name)):
