@@ -184,7 +184,7 @@ def strings_init():
             if create_offset(instr_addr):
                 strings_added += 1
         else:
-            error('Unable to make a string @ 0x%x with length of %d for usage in function @ 0x%x' % (string_addr, string_len, instr_addr))
+            error('FAILED-RETRY : Unable to make a string @ 0x%x with length of %d for usage in function @ 0x%x' % (string_addr, string_len, instr_addr))
 
     return strings_added
 
