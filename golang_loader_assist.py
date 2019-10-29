@@ -3,8 +3,8 @@
 __author__ = "Tim 'diff' Strazzere"
 __copyright__ = "Copyright 2016-2019, Red Naga"
 __license__ = "GPL"
-__version__ = "1.3"
-__email__ = ["strazz@gmail.com"]
+__version__ = "1.4"
+__email__ = ["strazz@gmail.com", "diff@protonmail.com"]
 
 from idautils import *
 from idc import *
@@ -77,29 +77,29 @@ VALID_DEST = ['esp', 'eax', 'ecx', 'edx', 'rsp']
 def is_string_load(addr):
     patterns = []
     # Check for first parts instruction and what it is loading -- also ignore function pointers we may have renamed
-    if (GetMnem(addr) != 'mov' and GetMnem(addr) != 'lea') and (GetOpType(addr, 1) != 2 or GetOpType(addr, 1) != 5) or GetOpnd(addr, 1)[-4:] == '_ptr':
+    if (idc.print_insn_mnem(addr) != 'mov' and idc.print_insn_mnem(addr) != 'lea') and (idc.get_operand_type(addr, 1) != 2 or idc.get_operand_type(addr, 1) != 5) or idc.print_operand(addr, 1)[-4:] == '_ptr':
         return False
 
     # Validate that the string offset actually exists inside the binary
-    if get_segm_name(GetOperandValue(addr, 1)) is None:
+    if get_segm_name(idc.get_operand_value(addr, 1)) is None:
         return False
 
     # Could be unk_, asc_, 'offset ', XXXXh, ignored ones are loc_ or inside []
-    if GetOpnd(addr, 0) in VALID_REGS and not ('[' in GetOpnd(addr, 1) or 'loc_' in GetOpnd(addr, 1)) and (('offset ' in GetOpnd(addr, 1) or 'h' in GetOpnd(addr, 1)) or ('unk' == GetOpnd(addr, 1)[:3])):
-        from_reg = GetOpnd(addr, 0)
+    if idc.print_operand(addr, 0) in VALID_REGS and not ('[' in idc.print_operand(addr, 1) or 'loc_' in idc.print_operand(addr, 1)) and (('offset ' in idc.print_operand(addr, 1) or 'h' in idc.print_operand(addr, 1)) or ('unk' == idc.print_operand(addr, 1)[:3])):
+        from_reg = idc.print_operand(addr, 0)
         # Check for second part
-        addr_2 = FindCode(addr, SEARCH_DOWN)
+        addr_2 = ida_search.find_code(addr, SEARCH_DOWN)
         try:
-            dest_reg = GetOpnd(addr_2, 0)[GetOpnd(addr_2, 0).index('[') + 1:GetOpnd(addr_2, 0).index('[') + 4]
+            dest_reg = idc.print_operand(addr_2, 0)[idc.print_operand(addr_2, 0).index('[') + 1:idc.print_operand(addr_2, 0).index('[') + 4]
         except ValueError:
             return False
-        if GetMnem(addr_2) == 'mov' and dest_reg in VALID_DEST and ('[%s' % dest_reg) in GetOpnd(addr_2, 0) and GetOpnd(addr_2, 1) == from_reg:
+        if idc.print_insn_mnem(addr_2) == 'mov' and dest_reg in VALID_DEST and ('[%s' % dest_reg) in idc.print_operand(addr_2, 0) and idc.print_operand(addr_2, 1) == from_reg:
             # Check for last part, could be improved
-            addr_3 = FindCode(addr_2, SEARCH_DOWN)
-            # GetOpType 1 is a register, potentially we can just check that GetOpType returned 5?
-            if GetMnem(addr_3) == 'mov' and (('[%s+' % dest_reg) in GetOpnd(addr_3, 0) or GetOpnd(addr_3, 0) in VALID_DEST) and 'offset ' not in GetOpnd(addr_3, 1) and 'dword ptr ds' not in GetOpnd(addr_3, 1) and GetOpType(addr_3, 1) != 1 and GetOpType(addr_3, 1) != 2 and GetOpType(addr_3, 1) != 4:
+            addr_3 = ida_search.find_code(addr_2, SEARCH_DOWN)
+            # idc.get_operand_type 1 is a register, potentially we can just check that idc.get_operand_type returned 5?
+            if idc.print_insn_mnem(addr_3) == 'mov' and (('[%s+' % dest_reg) in idc.print_operand(addr_3, 0) or idc.print_operand(addr_3, 0) in VALID_DEST) and 'offset ' not in idc.print_operand(addr_3, 1) and 'dword ptr ds' not in idc.print_operand(addr_3, 1) and idc.get_operand_type(addr_3, 1) != 1 and idc.get_operand_type(addr_3, 1) != 2 and idc.get_operand_type(addr_3, 1) != 4:
                 try:
-                    dumb_int_test = GetOperandValue(addr_3, 1)
+                    dumb_int_test = idc.get_operand_value(addr_3, 1)
                     if dumb_int_test > 0 and dumb_int_test < sys.maxsize:
                         return True
                 except ValueError:
@@ -114,23 +114,23 @@ def create_string(addr, string_len):
 
     debug('Found string load @ 0x%x with length of %d' % (addr, string_len))
     # This may be overly aggressive if we found the wrong area...
-    if GetStringType(addr) is not None and GetString(addr) is not None and len(GetString(addr)) != string_len:
+    if idc.get_str_type(addr) is not None and ida_bytes.get_strlit_contents(addr, string_len, STRTYPE_C) is not None and len(ida_bytes.get_strlit_contents(addr, string_len, STRTYPE_C)) != string_len:
         debug('It appears that there is already a string present @ 0x%x' % addr)
-        MakeUnknown(addr, string_len, DOUNK_SIMPLE)
+        #MakeUnknown(addr, string_len, DOUNK_SIMPLE)
 
-    if GetString(addr) is None and MakeStr(addr, addr + string_len):
+    if ida_bytes.get_strlit_contents(addr, string_len, STRTYPE_C) is None and ida_bytes.create_strlit(addr, string_len, STRTYPE_C):
         return True
     else:
         # If something is already partially analyzed (incorrectly) we need to MakeUnknown it
-        MakeUnknown(addr, string_len, DOUNK_SIMPLE)
-        if MakeStr(addr, addr + string_len):
+        #MakeUnknown(addr, string_len, DOUNK_SIMPLE)
+        if ida_bytes.create_strlit(addr, string_len, STRTYPE_C):
             return True
         debug('Unable to make a string @ 0x%x with length of %d' % (addr, string_len))
 
     return False
 
 def create_offset(addr):
-    if OpOff(addr, 1, 0):
+    if ida_offset.op_plain_offset(addr, 1, 0):
         return True
     else:
         debug('Unable to make an offset for string @ 0x%x ' % addr)
@@ -149,8 +149,8 @@ def strings_init():
     # and as of IDA Pro 6.95 it fails to autoanalyze many GO functions, currently
     # this works well since we redefine/find (almost) all the functions prior to
     # this being used. Could be worth a strategy rethink later one or on diff archs
-    for addr in Functions(text_seg.startEA, text_seg.endEA):
-        name = GetFunctionName(addr)
+    for addr in Functions(text_seg.start_ea, text_seg.end_ea):
+        name = idc.get_func_name(addr)
 
         end_addr = Chunks(addr).next()[1]
         if(end_addr < addr):
@@ -163,9 +163,9 @@ def strings_init():
             if is_string_load(addr):
                 if 'rodata' not in get_segm_name(addr) and 'text' not in get_segm_name(addr):
                     debug('Should a string be in the %s section?' % get_segm_name(addr))
-                string_addr = GetOperandValue(addr, 1)
-                addr_3 = FindCode(FindCode(addr, SEARCH_DOWN), SEARCH_DOWN)
-                string_len = GetOperandValue(addr_3, 1)
+                string_addr = idc.get_operand_value(addr, 1)
+                addr_3 = ida_search.find_code(ida_search.find_code(addr, SEARCH_DOWN), SEARCH_DOWN)
+                string_len = idc.get_operand_value(addr_3, 1)
                 if create_string(string_addr, string_len):
                     if create_offset(addr):
                         strings_added += 1
@@ -175,9 +175,9 @@ def strings_init():
                    retry.append((addr, string_addr, string_len))
 
                 # Skip the extra mov lines since we know it won't be a load on any of them
-                addr = FindCode(addr_3, SEARCH_DOWN)
+                addr = ida_search.find_code(addr_3, SEARCH_DOWN)
             else:
-                addr = FindCode(addr, SEARCH_DOWN)
+                addr = ida_search.find_code(addr, SEARCH_DOWN)
 
     for instr_addr, string_addr, string_len in retry:
         if create_string(string_addr, string_len):
@@ -228,9 +228,9 @@ def _get_seg_from_rdata(possible_seg_names):
 # mov     qword ptr ds:1003h, 0 # some
 
 def is_simple_wrapper(addr):
-    if GetMnem(addr) == 'xor' and GetOpnd(addr, 0) == 'edx' and  GetOpnd(addr, 1) == 'edx':
-        addr = FindCode(addr, SEARCH_DOWN)
-        if GetMnem(addr) == 'jmp' and GetOpnd(addr, 0) == 'runtime_morestack':
+    if idc.print_insn_mnem(addr) == 'xor' and idc.print_operand(addr, 0) == 'edx' and  idc.print_operand(addr, 1) == 'edx':
+        addr = ida_search.find_code(addr, SEARCH_DOWN)
+        if idc.print_insn_mnem(addr) == 'jmp' and idc.print_operand(addr, 0) == 'runtime_morestack':
             return True
 
     return False
@@ -249,7 +249,7 @@ def create_runtime_ms():
         #   Opcodes for "mov     qword ptr ds:dword_1000+3, 0"
         opcodes = '48 c7 04 25 03 10 00 00 00 00 00 00'
 
-    runtime_ms_end = idaapi.find_binary(text_seg.startEA, text_seg.endEA, opcodes, 0, SEARCH_DOWN)
+    runtime_ms_end = idaapi.find_binary(text_seg.start_ea, text_seg.end_ea, opcodes, 0, SEARCH_DOWN)
     if runtime_ms_end == BADADDR:
         debug('Failed to find opcodes associated with runtime_morestack: %s' % opcodes)
         return None
@@ -259,10 +259,10 @@ def create_runtime_ms():
         debug('Failed to get runtime_morestack function from address @ 0x%x' % runtime_ms_end)
         return None
 
-    if idc.MakeNameEx(runtime_ms.startEA, "runtime_morestack", SN_PUBLIC):
+    if idc.set_name(runtime_ms.start_ea, "runtime_morestack", SN_PUBLIC):
         debug('Successfully found runtime_morestack')
     else:
-        debug('Failed to rename function @ 0x%x to runtime_morestack' % runtime_ms.startEA)
+        debug('Failed to rename function @ 0x%x to runtime_morestack' % runtime_ms.start_ea)
 
     return runtime_ms
 
@@ -273,18 +273,18 @@ def traverse_xrefs(func):
         return func_created
 
     # First
-    func_xref = idaapi.get_first_cref_to(func.startEA)
+    func_xref = idaapi.get_first_cref_to(func.start_ea)
     # Attempt to go through crefs
     while func_xref != BADADDR:
         # See if there is a function already here
         if idaapi.get_func(func_xref) is None:
             # Ensure instruction bit looks like a jump
-            func_end = FindCode(func_xref, SEARCH_DOWN)
-            if GetMnem(func_end) == "jmp":
+            func_end = ida_search.find_code(func_xref, SEARCH_DOWN)
+            if idc.print_insn_mnem(func_end) == "jmp":
                 # Ensure we're jumping back "up"
-                func_start = GetOperandValue(func_end, 0)
+                func_start = idc.get_operand_value(func_end, 0)
                 if func_start < func_xref:
-                    if idc.MakeFunction(func_start, func_end):
+                    if ida_funcs.add_func(func_start, func_end):
                         func_created += 1
                     else:
                         # If this fails, we should add it to a list of failed functions
@@ -293,15 +293,15 @@ def traverse_xrefs(func):
         else:
             xref_func = idaapi.get_func(func_xref)
             # Simple wrapper is often runtime_morestack_noctxt, sometimes it isn't though...
-            if is_simple_wrapper(xref_func.startEA):
+            if is_simple_wrapper(xref_func.start_ea):
                 debug('Stepping into a simple wrapper')
                 func_created += traverse_xrefs(xref_func)
-            if idaapi.get_func_name(xref_func.startEA) is not None and 'sub_' not in idaapi.get_func_name(xref_func.startEA):
-                debug('Function @0x%x already has a name of %s; skipping...' % (func_xref, idaapi.get_func_name(xref_func.startEA)))
+            if idaapi.get_func_name(xref_func.start_ea) is not None and 'sub_' not in idaapi.get_func_name(xref_func.start_ea):
+                debug('Function @0x%x already has a name of %s; skipping...' % (func_xref, idaapi.get_func_name(xref_func.start_ea)))
             else:
-                debug('Function @ 0x%x already has a name %s' % (xref_func.startEA, idaapi.get_func_name(xref_func.startEA)))
+                debug('Function @ 0x%x already has a name %s' % (xref_func.start_ea, idaapi.get_func_name(xref_func.start_ea)))
 
-        func_xref = idaapi.get_next_cref_to(func.startEA, func_xref)
+        func_xref = idaapi.get_next_cref_to(func.start_ea, func_xref)
 
     return func_created
 
@@ -310,7 +310,7 @@ def find_func_by_name(name):
     if text_seg is None:
         return None
 
-    for addr in Functions(text_seg.startEA, text_seg.endEA):
+    for addr in Functions(text_seg.start_ea, text_seg.end_ea):
         if name == idaapi.get_func_name(addr):
             return idaapi.get_func(addr)
 
@@ -336,11 +336,11 @@ def runtime_init():
 
 def create_pointer(addr, force_size=None):
     if force_size is not 4 and (idaapi.get_inf_structure().is_64bit() or force_size is 8):
-        MakeQword(addr)
-        return Qword(addr), 8
+        ida_bytes.create_data(addr, FF_QWORD, 8, ida_idaapi.BADADDR)
+        return idc.get_qword(addr), 8
     else:
-        MakeDword(addr)
-        return Dword(addr), 4
+        ida_bytes.create_data(addr, FF_DWORD, 4, ida_idaapi.BADADDR)
+        return idc.get_wide_dword(addr), 4
 
 STRIP_CHARS = [ '(', ')', '[', ']', '{', '}', ' ', '"' ]
 REPLACE_CHARS = ['.', '*', '-', ',', ';', ':', '/', '\xb7' ]
@@ -362,13 +362,13 @@ def renamer_init():
     gopclntab = get_gopclntab_seg()
     if gopclntab is not None:
         info('type : %s' % type(gopclntab))
-        startEA = 0
+        start_ea = 0
         if isinstance(gopclntab, long):
-            startEA = gopclntab
+            start_ea = gopclntab
         else:
-            startEA = gopclntab.startEA
+            start_ea = gopclntab.start_ea
         # Skip unimportant header and goto section size
-        addr = startEA + 8
+        addr = start_ea + 8
         size, addr_size = create_pointer(addr)
         addr += addr_size
 
@@ -379,14 +379,14 @@ def renamer_init():
             name_offset, addr_size = create_pointer(addr + addr_size)
             addr += addr_size * 2
 
-            func_name_addr = Dword(name_offset + startEA + addr_size) + startEA
-            func_name = GetString(func_name_addr)
-            MakeStr(func_name_addr, func_name_addr + len(func_name))
+            func_name_addr = idc.get_wide_dword(name_offset + start_ea + addr_size) + start_ea
+            func_name = ida_bytes.get_strlit_contents(func_name_addr, -1, STRTYPE_C)
+            ida_bytes.create_strlit(func_name_addr, len(func_name), STRTYPE_C)
             appended = clean_func_name = clean_function_name(func_name)
             debug('Going to remap function at 0x%x with %s - cleaned up as %s' % (func_offset, func_name, clean_func_name))
 
             if idaapi.get_func_name(func_offset) is not None:
-                if MakeName(func_offset, clean_func_name):
+                if idc.set_name(func_offset, clean_func_name):
                     renamed += 1
                 else:
                     error('clean_func_name error %s' % clean_func_name)
@@ -410,16 +410,16 @@ def pointer_renamer():
         debug('Failed to get text segment')
         return renamed
 
-    for addr in Functions(text_seg.startEA, text_seg.endEA):
-        name = GetFunctionName(addr)
+    for addr in Functions(text_seg.start_ea, text_seg.end_ea):
+        name = idc.get_func_name(addr)
 
         # Look at data xrefs to the function - find the pointer that is located in .rodata
         data_ref = idaapi.get_first_dref_to(addr)
         while data_ref != BADADDR:
             if 'rodata' in get_segm_name(data_ref):
                 # Only rename things that are currently listed as an offset; eg. off_9120B0
-                if 'off_' in GetTrueName(data_ref):
-                    if MakeName(data_ref, ('%s_ptr' % name)):
+                if 'off_' in ida_name.get_ea_name(data_ref):
+                    if idc.set_name(data_ref, ('%s_ptr' % name)):
                         renamed += 1
                     else:
                         error('error attempting to name pointer @ 0x%02x for %s' % (data_ref, name))
@@ -433,9 +433,6 @@ def main():
     # This should be run before the renamer, as it will find and help define more functions
     func_added = runtime_init()
     info('Found and successfully created %d functions!' % func_added)
-
-    # This should prevent the script from locking up due to the auto initalizer
-    idaapi.autoWait()
 
     # Should be run after the function initializer,
     renamed = renamer_init()
