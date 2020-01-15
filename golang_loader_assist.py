@@ -22,15 +22,14 @@ DEBUG = False
 # Utility functions
 #
 def info(formatted_string):
-    print formatted_string
+    print(formatted_string)
 
 def error(formatted_string):
-    print 'ERROR - %s' % formatted_string
+    print(f'ERROR -  {formatted_string}')
 
 def debug(formatted_string):
     if DEBUG:
-        print 'DEBUG - %s' % formatted_string
-
+        print(f'DEBUG - {formatted_string}')
 #
 # String defining fuctionality
 #
@@ -344,17 +343,20 @@ def create_pointer(addr, force_size=None):
 
 STRIP_CHARS = [ '(', ')', '[', ']', '{', '}', ' ', '"' ]
 REPLACE_CHARS = ['.', '*', '-', ',', ';', ':', '/', '\xb7' ]
-def clean_function_name(str):
+def clean_function_name(in_str):
     # Kill generic 'bad' characters
-    str = filter(lambda x: x in string.printable, str)
+    s = ""
+    for c in in_str.decode():
+        if c in string.printable:
+            s += c
 
     for c in STRIP_CHARS:
-        str = str.replace(c, '')
+        s = s.replace(c, '')
 
     for c in REPLACE_CHARS:
-        str = str.replace(c, '_')
+        s = s.replace(c, '_')
 
-    return str
+    return s
 
 def renamer_init():
     renamed = 0
@@ -363,7 +365,7 @@ def renamer_init():
     if gopclntab is not None:
         info('type : %s' % type(gopclntab))
         start_ea = 0
-        if isinstance(gopclntab, long):
+        if isinstance(gopclntab, int):
             start_ea = gopclntab
         else:
             start_ea = gopclntab.start_ea
