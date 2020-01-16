@@ -7,6 +7,6 @@ If you're using IDA Pro 7.3 or below, you likely will need to take a look at the
 ## TODO
 - [X] Support IDA Pro 7.4
 - [X] Retain IDA Pro 7.3 support via old release taggin
-- [] Convert all code to Python3 syntax
+- [X] Convert all code to Python3 syntax
 - [] Get all code style into the same format
 - [] Clean up imports due to IDA Python changes
