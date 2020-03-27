@@ -151,7 +151,7 @@ def strings_init():
     for addr in Functions(text_seg.start_ea, text_seg.end_ea):
         name = idc.get_func_name(addr)
 
-        end_addr = Chunks(addr).next()[1]
+        end_addr = next(Chunks(addr))[1]
         if(end_addr < addr):
             error('Unable to find good end for the function %s' % name)
             pass
