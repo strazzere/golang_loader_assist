@@ -4,6 +4,9 @@ This is the `golang_loader_assist.py` code to accompany the blog I wrote, [Rever
 ## Important notes
 If you're using IDA Pro 7.3 or below, you likely will need to take a look at the older release tagged [IDA-7.3-and-Below](https://github.com/strazzere/golang_loader_assist/releases/tag/IDA-7.3-and-Below). This is due to changes in the IDA Python libraries which where introduced in 7.4 which do not look to be backwards compatible.
 
+## Testing
+`tests/run_ida.sh [binary] [idat64]` runs the script headlessly (`idat64 -B`) against a binary (default `hello-go/1.8.1/hello-normal`) and prints the summary counts, so results can be compared before and after a change. The idat64 path can also be set with `$IDAT`.
+
 ## TODO
 - [X] Support IDA Pro 8.4 w/ Python3 (tested with the go1.8.1 `hello-go` binary on IDA 8.4 Linux x86_64)
 - [X] Support IDA Pro 7.5 w/ Python3 (tested with a go1.13.6 and go1.14.4 binary on IDA 7.5.200519 Linux x86_64)

@@ -9,9 +9,12 @@ __email__ = ["strazz@gmail.com", "diff@protonmail.com"]
 import string
 import sys
 
+import ida_auto
 import ida_bytes
 import ida_funcs
+import ida_ida
 import ida_idaapi
+import ida_kernwin
 import ida_name
 import ida_offset
 import ida_search
@@ -43,6 +46,13 @@ def error(formatted_string):
 def debug(formatted_string):
     if DEBUG:
         print(f'DEBUG - {formatted_string}')
+
+
+def is_64bit():
+    """inf_is_64bit replaces the deprecated get_inf_structure().is_64bit()"""
+    if hasattr(ida_ida, 'inf_is_64bit'):
+        return ida_ida.inf_is_64bit()
+    return idaapi.get_inf_structure().is_64bit()
 
 
 #
@@ -323,7 +333,7 @@ def create_runtime_ms():
 
     #   Opcodes for "mov     large dword ptr ds:1003h, 0", binary search is faster than text search
     opcodes = 'c7 05 03 10 00 00 00 00 00 00'
-    if idaapi.get_inf_structure().is_64bit():
+    if is_64bit():
         #   Opcodes for "mov     qword ptr ds:dword_1000+3, 0"
         opcodes = '48 c7 04 25 03 10 00 00 00 00 00 00'
 
@@ -417,7 +427,7 @@ def runtime_init():
 
 
 def create_pointer(addr, force_size=None):
-    if force_size != 4 and (idaapi.get_inf_structure().is_64bit() or force_size == 8):
+    if force_size != 4 and (is_64bit() or force_size == 8):
         ida_bytes.create_data(addr, FF_QWORD, 8, ida_idaapi.BADADDR)
         return idc.get_qword(addr), 8
     else:
@@ -519,6 +529,8 @@ def pointer_renamer():
 
 
 def main():
+    # When run headless the script can start before auto analysis has finished
+    ida_auto.auto_wait()
 
     # This should be run before the renamer, as it will find and help define more functions
     func_added = runtime_init()
@@ -538,3 +550,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    # When run headless (idat -B), exit once finished instead of hanging
+    if ida_kernwin.cvar.batch:
+        idc.qexit(0)
